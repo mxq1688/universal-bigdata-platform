@@ -1,0 +1,226 @@
+# =================================================================
+# 大数据平台 — CI 流水线
+# 触发: push / PR → main, develop
+# 阶段: lint → test-python → test-java → build → docker
+# =================================================================
+
+name: CI Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - "bigdata-platform/code/**"
+      - "!bigdata-platform/code/docs/**"
+      - "!bigdata-platform/code/**/*.md"
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - "bigdata-platform/code/**"
+
+defaults:
+  run:
+    working-directory: bigdata-platform/code
+
+env:
+  PYTHON_VERSION: "3.11"
+  JAVA_VERSION: "11"
+  NODE_VERSION: "20"
+
+# 同一分支/PR 的新 push 取消旧的运行
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ====================== 1. Python Lint ======================
+  lint:
+    name: 🔍 Lint & Syntax Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Python syntax check
+        run: |
+          echo "🐍 Checking Python syntax..."
+          errors=0
+          while IFS= read -r -d '' file; do
+            if ! python -m py_compile "$file" 2>/dev/null; then
+              echo "❌ $file"
+              errors=$((errors + 1))
+            fi
+          done < <(find . -name "*.py" -not -path "*/__pycache__/*" -not -path "*/venv/*" -print0)
+          if [ $errors -gt 0 ]; then
+            echo "❌ $errors files have syntax errors"
+            exit 1
+          fi
+          echo "✅ All Python files pass syntax check"
+
+      - name: YAML lint
+        run: |
+          pip install yamllint -q
+          echo "📝 Checking YAML files..."
+          find . -name "*.yml" -o -name "*.yaml" | head -50 | while read f; do
+            yamllint -d relaxed "$f" || true
+          done
+          echo "✅ YAML check done"
+
+      - name: JSON validate
+        run: |
+          echo "📋 Validating JSON files..."
+          python -c "
+          import json, os, sys
+          errors = 0
+          for root, _, files in os.walk('.'):
+              if '__pycache__' in root or 'venv' in root: continue
+              for f in files:
+                  if not f.endswith('.json'): continue
+                  path = os.path.join(root, f)
+                  try:
+                      with open(path) as fp: json.load(fp)
+                  except json.JSONDecodeError as e:
+                      print(f'❌ {path}: {e}')
+                      errors += 1
+          print(f'✅ JSON validation done ({errors} errors)')
+          sys.exit(1 if errors else 0)
+          "
+
+  # ====================== 2. Python Tests ======================
+  test-python:
+    name: 🐍 Python Tests
+    runs-on: ubuntu-latest
+    needs: lint
+    strategy:
+      matrix:
+        module:
+          - name: common
+            path: common/python-utils
+            reqs: common/python-utils/requirements.txt
+          - name: sync
+            path: sync
+            reqs: sync/requirements.txt
+          - name: quality
+            path: quality
+            reqs: quality/requirements.txt
+          - name: agent-service
+            path: agent-service
+            reqs: agent-service/requirements.txt
+          - name: scripts
+            path: scripts
+            reqs: ""
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ matrix.module.name }}-${{ hashFiles(format('{0}', matrix.module.reqs)) }}
+          restore-keys: pip-${{ matrix.module.name }}-
+
+      - name: Install dependencies
+        run: |
+          pip install pytest pytest-cov -q
+          if [ -f "${{ matrix.module.reqs }}" ]; then
+            pip install -r "${{ matrix.module.reqs }}" -q 2>/dev/null || true
+          fi
+          # 通用测试依赖
+          pip install pandas numpy pyyaml python-dotenv -q
+
+      - name: Run tests — ${{ matrix.module.name }}
+        run: |
+          cd ${{ matrix.module.path }}
+          if [ -d "tests" ]; then
+            python -m pytest tests/ -v --tb=short --co -q 2>/dev/null && \
+            python -m pytest tests/ -v --tb=short \
+              --junitxml=../../test-results/${{ matrix.module.name }}.xml \
+              || exit 1
+          else
+            echo "⚠️ No tests directory found for ${{ matrix.module.name }}, skipping"
+          fi
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ matrix.module.name }}
+          path: bigdata-platform/code/test-results/
+          retention-days: 7
+          if-no-files-found: ignore
+
+  # ====================== 3. Java/Scala Build ======================
+  build-java:
+    name: ☕ Java/Scala Build
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: maven
+
+      - name: Build common-java-utils
+        run: cd common/java-utils && mvn clean install -DskipTests -q
+
+      - name: Build common-scala-utils
+        run: cd common/scala-utils && mvn clean install -DskipTests -q
+
+      - name: Build Flink streaming
+        run: cd realtime/flink-streaming && mvn clean package -DskipTests -q
+
+      - name: Upload Flink JAR
+        uses: actions/upload-artifact@v4
+        with:
+          name: flink-streaming-jar
+          path: bigdata-platform/code/realtime/flink-streaming/target/*.jar
+          retention-days: 7
+
+  # ====================== 4. Docker Build ======================
+  docker:
+    name: 🐳 Docker Build
+    runs-on: ubuntu-latest
+    needs: [test-python, build-java]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build agent-service image
+        run: |
+          cd agent-service
+          docker build -t bigdata-platform/agent-service:${{ github.sha }} .
+          docker build -t bigdata-platform/agent-service:latest .
+          echo "✅ agent-service image built"
+
+      - name: Docker image size
+        run: docker images bigdata-platform/agent-service --format "table {{.Repository}}\t{{.Tag}}\t{{.Size}}"
+
+  # ====================== 5. CI Summary ======================
+  ci-summary:
+    name: 📊 CI Summary
+    runs-on: ubuntu-latest
+    needs: [lint, test-python, build-java]
+    if: always()
+    steps:
+      - name: Summary
+        run: |
+          echo "## 🏗️ CI Pipeline Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Stage | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Lint | ${{ needs.lint.result == 'success' && '✅' || '❌' }} ${{ needs.lint.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Python Tests | ${{ needs.test-python.result == 'success' && '✅' || '❌' }} ${{ needs.test-python.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Java Build | ${{ needs.build-java.result == 'success' && '✅' || '❌' }} ${{ needs.build-java.result }} |" >> $GITHUB_STEP_SUMMARY

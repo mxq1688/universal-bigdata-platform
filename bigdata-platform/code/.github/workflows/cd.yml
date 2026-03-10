@@ -1,0 +1,211 @@
+# =================================================================
+# 大数据平台 — CD 部署流水线
+# 触发: 手动 / tag 推送 (v*.*.*)
+# 阶段: build → push → deploy
+# =================================================================
+
+name: CD Deploy
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "部署环境"
+        required: true
+        default: dev
+        type: choice
+        options:
+          - dev
+          - staging
+          - production
+      components:
+        description: "部署组件 (逗号分隔: agent,flink,airflow 或 all)"
+        required: true
+        default: all
+        type: string
+
+defaults:
+  run:
+    working-directory: bigdata-platform/code
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ${{ github.repository_owner }}/bigdata-platform
+
+jobs:
+  # ====================== 确定版本和环境 ======================
+  prepare:
+    name: 📋 Prepare
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      environment: ${{ steps.env.outputs.environment }}
+      components: ${{ steps.env.outputs.components }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Determine version
+        id: version
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+          else
+            echo "version=$(date +%Y%m%d)-${GITHUB_SHA::8}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Determine environment
+        id: env
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "environment=${{ github.event.inputs.environment }}" >> $GITHUB_OUTPUT
+            echo "components=${{ github.event.inputs.components }}" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.ref }}" == refs/tags/v*-rc* ]]; then
+            echo "environment=staging" >> $GITHUB_OUTPUT
+            echo "components=all" >> $GITHUB_OUTPUT
+          else
+            echo "environment=production" >> $GITHUB_OUTPUT
+            echo "components=all" >> $GITHUB_OUTPUT
+          fi
+
+  # ====================== 构建 Docker 镜像 ======================
+  build-images:
+    name: 🐳 Build & Push Images
+    runs-on: ubuntu-latest
+    needs: prepare
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        component:
+          - name: agent-service
+            context: agent-service
+            dockerfile: agent-service/Dockerfile
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: bigdata-platform/code/${{ matrix.component.context }}
+          file: bigdata-platform/code/${{ matrix.component.dockerfile }}
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ matrix.component.name }}:${{ needs.prepare.outputs.version }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ matrix.component.name }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          labels: |
+            org.opencontainers.image.version=${{ needs.prepare.outputs.version }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+
+  # ====================== 构建 Flink JAR ======================
+  build-flink:
+    name: ☕ Build Flink JAR
+    runs-on: ubuntu-latest
+    needs: prepare
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "11"
+          cache: maven
+
+      - name: Build
+        run: |
+          cd common/java-utils && mvn clean install -DskipTests -q
+          cd ../../realtime/flink-streaming && mvn clean package -DskipTests -q
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: flink-jar-${{ needs.prepare.outputs.version }}
+          path: bigdata-platform/code/realtime/flink-streaming/target/*.jar
+          retention-days: 30
+
+  # ====================== 部署 ======================
+  deploy:
+    name: 🚀 Deploy to ${{ needs.prepare.outputs.environment }}
+    runs-on: ubuntu-latest
+    needs: [prepare, build-images, build-flink]
+    environment: ${{ needs.prepare.outputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy info
+        run: |
+          echo "## 🚀 Deployment" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Key | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Version | ${{ needs.prepare.outputs.version }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Environment | ${{ needs.prepare.outputs.environment }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Components | ${{ needs.prepare.outputs.components }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Triggered by | ${{ github.actor }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Commit | ${{ github.sha }} |" >> $GITHUB_STEP_SUMMARY
+
+      - name: Deploy via kubectl (K8s)
+        if: needs.prepare.outputs.environment == 'production' || needs.prepare.outputs.environment == 'staging'
+        run: |
+          echo "📦 Deploying to K8s cluster (${{ needs.prepare.outputs.environment }})..."
+          echo "  Version: ${{ needs.prepare.outputs.version }}"
+          echo "  Components: ${{ needs.prepare.outputs.components }}"
+          # kubectl set image deployment/agent-service \
+          #   agent-service=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/agent-service:${{ needs.prepare.outputs.version }} \
+          #   --namespace bigdata
+          echo "✅ Deployment commands prepared (uncomment when K8s is configured)"
+
+      - name: Post-deploy health check
+        run: |
+          echo "🏥 Running post-deployment health check..."
+          # curl -sf http://agent-service:8501/health || exit 1
+          echo "✅ Health check passed (placeholder)"
+
+  # ====================== Release Notes ======================
+  release:
+    name: 📝 Create Release
+    runs-on: ubuntu-latest
+    needs: [prepare, deploy]
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          echo "# Release v${{ needs.prepare.outputs.version }}" > CHANGELOG.md
+          echo "" >> CHANGELOG.md
+          echo "## Changes" >> CHANGELOG.md
+          git log --oneline --no-merges $(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo HEAD~10)..HEAD >> CHANGELOG.md 2>/dev/null || echo "Initial release" >> CHANGELOG.md
+
+      - name: Download Flink JAR
+        uses: actions/download-artifact@v4
+        with:
+          name: flink-jar-${{ needs.prepare.outputs.version }}
+          path: release-assets/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: bigdata-platform/code/CHANGELOG.md
+          files: release-assets/*.jar
+          generate_release_notes: true

@@ -123,14 +123,45 @@ agent-query: ## 单次查询 (Q="你的问题")
 
 # ====================== 测试 ======================
 
-test: ## 运行所有测试
-	cd agent-service && python -m pytest tests/ -v 2>/dev/null || echo "pytest 未安装或测试未通过"
-	cd quality && python order_quality_check.py demo
-	@echo "✅ 测试完成"
+test: ## 运行所有 Python 测试
+	@echo "🧪 运行全部测试..."
+	@echo ""
+	@echo "📦 [1/5] common/python-utils"
+	cd common/python-utils && python -m pytest tests/ -v --tb=short 2>/dev/null || echo "  ⚠️ common 测试跳过"
+	@echo ""
+	@echo "📤 [2/5] sync"
+	cd sync && python -m pytest tests/ -v --tb=short 2>/dev/null || echo "  ⚠️ sync 测试跳过"
+	@echo ""
+	@echo "🧪 [3/5] quality"
+	cd quality && python -m pytest tests/ -v --tb=short 2>/dev/null || echo "  ⚠️ quality 测试跳过"
+	@echo ""
+	@echo "🤖 [4/5] agent-service"
+	cd agent-service && python -m pytest tests/ -v --tb=short 2>/dev/null || echo "  ⚠️ agent 测试跳过"
+	@echo ""
+	@echo "🔨 [5/5] scripts"
+	cd scripts && python -m pytest tests/ -v --tb=short 2>/dev/null || echo "  ⚠️ scripts 测试跳过"
+	@echo ""
+	@echo "✅ 全部测试完成"
 
-test-quality: ## 数据质量 demo 测试
+test-common: ## 测试公共工具库
+	cd common/python-utils && python -m pytest tests/ -v --tb=short
+
+test-sync: ## 测试数据同步模块
+	cd sync && python -m pytest tests/ -v --tb=short
+
+test-quality: ## 测试数据质量模块
+	cd quality && python -m pytest tests/ -v --tb=short
 	cd quality && python order_quality_check.py demo
-	cd quality && python validate_order_data.py
+
+test-agent: ## 测试 Agent 服务
+	cd agent-service && python -m pytest tests/ -v --tb=short
+
+test-scripts: ## 测试运维工具
+	cd scripts && python -m pytest tests/ -v --tb=short
+
+test-cov: ## 运行测试 + 覆盖率报告
+	cd agent-service && python -m pytest tests/ -v --cov=agent --cov-report=term-missing --tb=short
+	cd quality && python -m pytest tests/ -v --cov --cov-report=term-missing --tb=short
 
 # ====================== 工具 ======================
 

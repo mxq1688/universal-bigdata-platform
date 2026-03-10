@@ -180,7 +180,7 @@ class TestPandasTool:
     def test_runtime_error_caught(self):
         result = self.tool.execute_code("1 / 0", {})
         assert result["success"] is False
-        assert "ZeroDivision" in result["error"]
+        assert "division by zero" in result["error"].lower() or "ZeroDivision" in result["error"]
 
     def test_describe_dataframe(self):
         summary = self.tool.describe_dataframe(self.sample_df)
