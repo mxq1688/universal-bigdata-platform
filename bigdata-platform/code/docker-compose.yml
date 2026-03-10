@@ -1,0 +1,179 @@
+# =================================================================
+# 大数据平台 本地开发环境
+# 用法: docker-compose up -d
+# =================================================================
+version: '3.8'
+
+services:
+
+  # ====================== MySQL (业务数据源) ======================
+  mysql:
+    image: mysql:8.0
+    container_name: bigdata-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: root123
+      MYSQL_DATABASE: bigdata_source
+      MYSQL_CHARSET: utf8mb4
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./sql/init:/docker-entrypoint-initdb.d
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ====================== Kafka + Zookeeper ======================
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: bigdata-zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: bigdata-kafka
+    depends_on:
+      - zookeeper
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    ports:
+      - "9092:9092"
+      - "29092:29092"
+
+  # ====================== Doris (数仓) ======================
+  doris-fe:
+    image: apache/doris:2.0.3-fe-x86_64
+    container_name: bigdata-doris-fe
+    environment:
+      FE_SERVERS: "fe1:doris-fe:9010"
+      FE_ID: 1
+    ports:
+      - "8030:8030"   # HTTP
+      - "9030:9030"   # MySQL Protocol
+    volumes:
+      - doris_fe_data:/opt/apache-doris/fe/doris-meta
+
+  doris-be:
+    image: apache/doris:2.0.3-be-x86_64
+    container_name: bigdata-doris-be
+    depends_on:
+      - doris-fe
+    environment:
+      FE_SERVERS: "fe1:doris-fe:9010"
+      BE_ADDR: "doris-be:9050"
+    ports:
+      - "8040:8040"
+    volumes:
+      - doris_be_data:/opt/apache-doris/be/storage
+
+  # ====================== Elasticsearch ======================
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+    container_name: bigdata-elasticsearch
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ports:
+      - "9200:9200"
+    volumes:
+      - es_data:/usr/share/elasticsearch/data
+
+  # ====================== Redis ======================
+  redis:
+    image: redis:7-alpine
+    container_name: bigdata-redis
+    ports:
+      - "6379:6379"
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+
+  # ====================== PostgreSQL (Airflow 元数据) ======================
+  postgres:
+    image: postgres:15-alpine
+    container_name: bigdata-postgres
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  # ====================== Airflow ======================
+  airflow-webserver:
+    image: apache/airflow:2.8.1-python3.11
+    container_name: bigdata-airflow-webserver
+    depends_on:
+      - postgres
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "true"
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/operators:/opt/airflow/plugins/operators
+      - airflow_logs:/opt/airflow/logs
+    command: >
+      bash -c "
+        airflow db migrate &&
+        airflow users create --role Admin --username admin --password admin --email admin@example.com --firstname admin --lastname admin || true &&
+        airflow webserver
+      "
+
+  airflow-scheduler:
+    image: apache/airflow:2.8.1-python3.11
+    container_name: bigdata-airflow-scheduler
+    depends_on:
+      - airflow-webserver
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/operators:/opt/airflow/plugins/operators
+      - airflow_logs:/opt/airflow/logs
+    command: airflow scheduler
+
+  # ====================== Agent Service ======================
+  agent-service:
+    build:
+      context: ./agent-service
+      dockerfile: Dockerfile
+    container_name: bigdata-agent
+    depends_on:
+      - doris-fe
+      - elasticsearch
+    env_file:
+      - ./agent-service/.env
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./agent-service:/app
+      - agent_output:/app/output
+    restart: unless-stopped
+
+volumes:
+  mysql_data:
+  doris_fe_data:
+  doris_be_data:
+  es_data:
+  postgres_data:
+  airflow_logs:
+  agent_output:

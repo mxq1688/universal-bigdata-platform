@@ -1,0 +1,64 @@
+{
+  "job": {
+    "setting": {
+      "speed": {
+        "channel": 3,
+        "byte": 104857600
+      },
+      "errorLimit": {
+        "record": 0,
+        "percentage": 0.02
+      }
+    },
+    "content": [
+      {
+        "reader": {
+          "name": "kafkareader",
+          "parameter": {
+            "bootstrapServers": "${KAFKA_BOOTSTRAP_SERVERS}",
+            "topic": "user_behavior",
+            "groupId": "datax-kafka2hdfs-behavior",
+            "offsetReset": "earliest",
+            "fetchSize": 1024,
+            "maxPollRecords": 500,
+            "column": [
+              {"name": "user_id", "type": "string"},
+              {"name": "action", "type": "string"},
+              {"name": "product_id", "type": "string"},
+              {"name": "category", "type": "string"},
+              {"name": "timestamp", "type": "long"},
+              {"name": "device", "type": "string"},
+              {"name": "city", "type": "string"},
+              {"name": "session_id", "type": "string"}
+            ],
+            "encoding": "UTF-8",
+            "contentType": "json"
+          }
+        },
+        "writer": {
+          "name": "hdfswriter",
+          "parameter": {
+            "defaultFS": "${HDFS_URL}",
+            "path": "/user/hive/warehouse/ods_kafka.db/ods_user_behavior/dt=${RUN_DATE}",
+            "fileName": "user_behavior",
+            "column": [
+              {"index": 0, "name": "user_id", "type": "string"},
+              {"index": 1, "name": "action", "type": "string"},
+              {"index": 2, "name": "product_id", "type": "string"},
+              {"index": 3, "name": "category", "type": "string"},
+              {"index": 4, "name": "timestamp", "type": "bigint"},
+              {"index": 5, "name": "device", "type": "string"},
+              {"index": 6, "name": "city", "type": "string"},
+              {"index": 7, "name": "session_id", "type": "string"}
+            ],
+            "writeMode": "append",
+            "fieldDelimiter": "\t",
+            "compress": "gzip",
+            "encoding": "UTF-8",
+            "fileType": "text"
+          }
+        }
+      }
+    ]
+  }
+}

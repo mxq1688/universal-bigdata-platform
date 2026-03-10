@@ -1,0 +1,71 @@
+# ====================== Python ======================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+venv/
+.venv/
+env/
+.env
+*.log
+
+# ====================== Java / Maven ======================
+target/
+*.class
+*.jar
+*.war
+*.ear
+*.iml
+.idea/
+*.ipr
+*.iws
+
+# ====================== Scala / SBT ======================
+project/target/
+.bsp/
+.metals/
+.bloop/
+
+# ====================== IDE ======================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ====================== 数据文件 ======================
+*.csv
+*.parquet
+*.orc
+*.avro
+data/
+data_quality_results/
+charts_output/
+
+# ====================== Docker ======================
+docker-compose.override.yml
+
+# ====================== Airflow ======================
+airflow.db
+airflow-webserver.pid
+logs/
+
+# ====================== Great Expectations ======================
+quality/uncommitted/
+
+# ====================== Node (如果有前端) ======================
+node_modules/
+.next/
+
+# ====================== 临时文件 ======================
+*.tmp
+*.bak
+*.swp
+/tmp/

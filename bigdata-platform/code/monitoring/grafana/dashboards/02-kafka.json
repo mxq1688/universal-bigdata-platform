@@ -1,0 +1,122 @@
+{
+  "description": "Kafka 集群监控: Broker 状态 / Topic 消息量 / 消费者 Lag / 分区状态",
+  "editable": true,
+  "panels": [
+    {
+      "title": "Broker 状态",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [{ "options": { "0": { "color": "red", "text": "DOWN" }, "1": { "color": "green", "text": "UP" } }, "type": "value" }],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] },
+          "color": { "mode": "thresholds" }
+        }
+      },
+      "targets": [
+        { "expr": "up{job=\"kafka\"}", "legendFormat": "Broker" }
+      ]
+    },
+    {
+      "title": "Topic 消息总量",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "palette-classic" } } },
+      "targets": [
+        { "expr": "sum(kafka_topic_partition_current_offset) by (topic)", "legendFormat": "{{ topic }}" }
+      ]
+    },
+    {
+      "title": "消费者 Lag 总量",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 10000 }, { "color": "red", "value": 100000 }] },
+          "color": { "mode": "thresholds" }
+        }
+      },
+      "targets": [
+        { "expr": "sum(kafka_consumergroup_lag_sum) by (consumergroup)", "legendFormat": "{{ consumergroup }}" }
+      ]
+    },
+    {
+      "title": "分区数",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": { "defaults": { "unit": "short", "color": { "fixedColor": "blue", "mode": "fixed" } } },
+      "targets": [
+        { "expr": "count(kafka_topic_partition_current_offset) by (topic)", "legendFormat": "{{ topic }}" }
+      ]
+    },
+    {
+      "title": "📈 消息写入速率 (msg/s)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": {
+        "defaults": { "unit": "ops", "custom": { "lineWidth": 2, "fillOpacity": 15, "gradientMode": "scheme" } }
+      },
+      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["mean", "max", "lastNotNull"] } },
+      "targets": [
+        { "expr": "sum(rate(kafka_topic_partition_current_offset[5m])) by (topic)", "legendFormat": "{{ topic }}" }
+      ]
+    },
+    {
+      "title": "📈 消费者 Lag 趋势",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": { "lineWidth": 2, "fillOpacity": 10 },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 10000 }, { "color": "red", "value": 100000 }] }
+        }
+      },
+      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["mean", "max", "lastNotNull"] } },
+      "targets": [
+        { "expr": "sum(kafka_consumergroup_lag) by (consumergroup, topic)", "legendFormat": "{{ consumergroup }} / {{ topic }}" }
+      ]
+    },
+    {
+      "title": "📊 Topic 消息字节速率",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": { "defaults": { "unit": "Bps", "custom": { "lineWidth": 2, "fillOpacity": 10 } } },
+      "targets": [
+        { "expr": "sum(rate(kafka_topic_partition_current_offset[5m]) * 500) by (topic)", "legendFormat": "{{ topic }}" }
+      ]
+    },
+    {
+      "title": "📊 ISR 副本状态",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": { "defaults": { "unit": "short", "custom": { "lineWidth": 2 } } },
+      "targets": [
+        { "expr": "sum(kafka_topic_partition_under_replicated_partition) by (topic)", "legendFormat": "Under-replicated: {{ topic }}" },
+        { "expr": "sum(kafka_topic_partition_in_sync_replica) by (topic)", "legendFormat": "ISR: {{ topic }}" }
+      ]
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["bigdata", "kafka", "streaming"],
+  "templating": {
+    "list": [
+      { "name": "DS_PROMETHEUS", "type": "datasource", "query": "prometheus" }
+    ]
+  },
+  "time": { "from": "now-3h", "to": "now" },
+  "timezone": "Asia/Shanghai",
+  "title": "📮 Kafka 集群监控",
+  "uid": "bigdata-kafka",
+  "version": 1
+}

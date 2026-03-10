@@ -1,0 +1,51 @@
+# =================================================================
+# Grafana 数据源 — 自动配置 (Provisioning)
+# =================================================================
+
+apiVersion: 1
+
+datasources:
+  # ---- Prometheus (主指标源) ----
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: true
+    jsonData:
+      timeInterval: "15s"
+      httpMethod: POST
+
+  # ---- Doris (SQL 查询) ----
+  - name: Doris
+    type: mysql
+    url: doris-fe:9030
+    database: bigdata
+    user: root
+    secureJsonData:
+      password: ""
+    editable: true
+    jsonData:
+      maxOpenConns: 10
+      connMaxLifetime: 3600
+
+  # ---- Elasticsearch (日志) ----
+  - name: Elasticsearch
+    type: elasticsearch
+    access: proxy
+    url: http://elasticsearch:9200
+    database: "bigdata-*"
+    editable: true
+    jsonData:
+      esVersion: "8.11.0"
+      timeField: "@timestamp"
+      logMessageField: "message"
+      logLevelField: "level"
+
+  # ---- Alertmanager ----
+  - name: Alertmanager
+    type: alertmanager
+    access: proxy
+    url: http://alertmanager:9093
+    jsonData:
+      implementation: prometheus

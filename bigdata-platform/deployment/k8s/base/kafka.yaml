@@ -1,0 +1,73 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: kafka
+  namespace: bigdata
+spec:
+  serviceName: kafka-headless
+  replicas: 3
+  selector:
+    matchLabels:
+      app: kafka
+  template:
+    metadata:
+      labels:
+        app: kafka
+    spec:
+      containers:
+        - name: kafka
+          image: bitnami/kafka:3.7
+          ports:
+            - containerPort: 9092
+            - containerPort: 9093
+          env:
+            - name: KAFKA_CFG_PROCESS_ROLES
+              value: "broker,controller"
+            - name: KAFKA_CFG_NUM_PARTITIONS
+              value: "6"
+            - name: KAFKA_CFG_DEFAULT_REPLICATION_FACTOR
+              value: "3"
+            - name: KAFKA_HEAP_OPTS
+              value: "-Xmx2g -Xms2g"
+          resources:
+            requests: { cpu: "500m", memory: "2Gi" }
+            limits: { cpu: "2", memory: "4Gi" }
+          volumeMounts:
+            - name: kafka-data
+              mountPath: /bitnami/kafka
+  volumeClaimTemplates:
+    - metadata:
+        name: kafka-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: standard
+        resources:
+          requests:
+            storage: 100Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka-headless
+  namespace: bigdata
+spec:
+  clusterIP: None
+  selector:
+    app: kafka
+  ports:
+    - name: client
+      port: 9092
+    - name: controller
+      port: 9093
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka
+  namespace: bigdata
+spec:
+  selector:
+    app: kafka
+  ports:
+    - name: client
+      port: 9092

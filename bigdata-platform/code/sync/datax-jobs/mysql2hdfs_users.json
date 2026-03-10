@@ -1,0 +1,63 @@
+{
+  "job": {
+    "setting": {
+      "speed": {
+        "channel": 3,
+        "byte": 104857600
+      },
+      "errorLimit": {
+        "record": 0,
+        "percentage": 0.02
+      }
+    },
+    "content": [
+      {
+        "reader": {
+          "name": "mysqlreader",
+          "parameter": {
+            "username": "${MYSQL_USER}",
+            "password": "${MYSQL_PASSWORD}",
+            "column": ["*"],
+            "connection": [
+              {
+                "querySql": [
+                  "SELECT user_id, user_name, phone, gender, age, city, register_time, register_channel, last_login_time, status FROM users WHERE DATE(register_time) <= '${RUN_DATE}'"
+                ],
+                "jdbcUrl": [
+                  "jdbc:mysql://${MYSQL_HOST}:${MYSQL_PORT}/${MYSQL_DB}?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai"
+                ]
+              }
+            ],
+            "splitPk": "user_id",
+            "fetchSize": 1024
+          }
+        },
+        "writer": {
+          "name": "hdfswriter",
+          "parameter": {
+            "defaultFS": "${HDFS_URL}",
+            "path": "/user/hive/warehouse/ods_mysql.db/ods_mysql_users/dt=${RUN_DATE}",
+            "fileName": "users",
+            "column": [
+              {"index": 0, "name": "user_id", "type": "string"},
+              {"index": 1, "name": "user_name", "type": "string"},
+              {"index": 2, "name": "phone", "type": "string"},
+              {"index": 3, "name": "gender", "type": "string"},
+              {"index": 4, "name": "age", "type": "int"},
+              {"index": 5, "name": "city", "type": "string"},
+              {"index": 6, "name": "register_time", "type": "string"},
+              {"index": 7, "name": "register_channel", "type": "string"},
+              {"index": 8, "name": "last_login_time", "type": "string"},
+              {"index": 9, "name": "status", "type": "string"}
+            ],
+            "writeMode": "append",
+            "fieldDelimiter": "\t",
+            "compress": "gzip",
+            "encoding": "UTF-8",
+            "fileType": "text"
+          }
+        }
+      }
+    ]
+  }
+}

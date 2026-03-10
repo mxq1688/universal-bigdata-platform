@@ -1,0 +1,19 @@
+# =================================================================
+# Grafana Dashboard 自动发现 (Provisioning)
+# =================================================================
+
+apiVersion: 1
+
+providers:
+  - name: "BigData Platform"
+    orgId: 1
+    folder: "大数据平台"
+    folderUid: "bigdata"
+    type: file
+    disableDeletion: false
+    editable: true
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false

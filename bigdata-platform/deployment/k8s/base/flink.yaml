@@ -1,0 +1,98 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: flink-jobmanager
+  namespace: bigdata
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: flink
+      component: jobmanager
+  template:
+    metadata:
+      labels:
+        app: flink
+        component: jobmanager
+    spec:
+      containers:
+        - name: jobmanager
+          image: flink:1.19-java11
+          args: ["jobmanager"]
+          ports:
+            - containerPort: 8081
+          env:
+            - name: FLINK_PROPERTIES
+              value: |
+                jobmanager.rpc.address: flink-jobmanager
+                jobmanager.memory.process.size: 2048m
+                execution.checkpointing.interval: 60000
+          resources:
+            requests: { cpu: "500m", memory: "2Gi" }
+            limits: { cpu: "2", memory: "4Gi" }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: flink-taskmanager
+  namespace: bigdata
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: flink
+      component: taskmanager
+  template:
+    metadata:
+      labels:
+        app: flink
+        component: taskmanager
+    spec:
+      containers:
+        - name: taskmanager
+          image: flink:1.19-java11
+          args: ["taskmanager"]
+          env:
+            - name: FLINK_PROPERTIES
+              value: |
+                jobmanager.rpc.address: flink-jobmanager
+                taskmanager.memory.process.size: 4096m
+                taskmanager.numberOfTaskSlots: 4
+          resources:
+            requests: { cpu: "1", memory: "4Gi" }
+            limits: { cpu: "4", memory: "8Gi" }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: flink-jobmanager
+  namespace: bigdata
+spec:
+  selector:
+    app: flink
+    component: jobmanager
+  ports:
+    - name: webui
+      port: 8081
+    - name: rpc
+      port: 6123
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: flink-taskmanager-hpa
+  namespace: bigdata
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: flink-taskmanager
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70

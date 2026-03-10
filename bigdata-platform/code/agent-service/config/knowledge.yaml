@@ -1,0 +1,265 @@
+# ================================================================
+# 业务指标知识库
+# Agent 会根据这份配置自动理解业务术语、生成 SQL、设定告警阈值
+# 注意: 字段名必须与 Doris DDL 完全一致
+# ================================================================
+
+database:
+  tables:
+    # ---------- DWD 明细层 ----------
+    - name: dwd_trade_order_detail
+      schema: dwd
+      description: 订单明细表，每行是一笔订单的一个商品明细。按 dt(日期) 分区。
+      columns:
+        - { name: order_id,        type: VARCHAR(32),   desc: 订单ID (主键) }
+        - { name: user_id,         type: VARCHAR(32),   desc: 用户ID }
+        - { name: store_id,        type: VARCHAR(32),   desc: 门店ID }
+        - { name: product_id,      type: VARCHAR(32),   desc: 商品ID }
+        - { name: product_name,    type: VARCHAR(256),  desc: 商品名称 }
+        - { name: category,        type: VARCHAR(64),   desc: 商品一级分类 }
+        - { name: brand,           type: VARCHAR(128),  desc: 品牌 }
+        - { name: quantity,        type: INT,           desc: 购买数量 }
+        - { name: unit_price,      type: DECIMAL(10,2), desc: 商品单价 }
+        - { name: total_amount,    type: DECIMAL(10,2), desc: 订单总金额 }
+        - { name: discount_amount, type: DECIMAL(10,2), desc: 优惠金额 }
+        - { name: pay_amount,      type: DECIMAL(10,2), desc: 实付金额 }
+        - { name: status,          type: VARCHAR(16),   desc: "订单状态: created/paid/shipped/completed/refunded" }
+        - { name: payment_method,  type: VARCHAR(32),   desc: "支付方式: alipay/wechat/card/cash" }
+        - { name: city,            type: VARCHAR(64),   desc: 下单城市 }
+        - { name: province,        type: VARCHAR(64),   desc: 省份 }
+        - { name: platform,        type: VARCHAR(16),   desc: "下单平台: app/web/mini_program" }
+        - { name: user_vip_level,  type: INT,           desc: 用户VIP等级 }
+        - { name: store_type,      type: VARCHAR(32),   desc: "门店类型: flagship/standard/mini" }
+        - { name: create_time,     type: DATETIME,      desc: 下单时间 }
+        - { name: pay_time,        type: DATETIME,      desc: 支付时间 }
+        - { name: dt,              type: DATE,          desc: "分区日期，格式 YYYY-MM-DD" }
+
+    - name: dwd_user_behavior_detail
+      schema: dwd
+      description: 用户行为明细表，每行是一次用户行为事件。按 dt(日期) 分区。
+      columns:
+        - { name: user_id,       type: VARCHAR(32),   desc: 用户ID }
+        - { name: action,        type: VARCHAR(16),   desc: "行为类型: view/click/cart/order/pay" }
+        - { name: product_id,    type: VARCHAR(32),   desc: 商品ID }
+        - { name: product_name,  type: VARCHAR(256),  desc: 商品名称 }
+        - { name: category,      type: VARCHAR(64),   desc: 商品分类 }
+        - { name: device,        type: VARCHAR(32),   desc: "设备: iPhone/Android/iPad/PC/Mac" }
+        - { name: city,          type: VARCHAR(64),   desc: 城市 }
+        - { name: session_id,    type: VARCHAR(64),   desc: 会话ID }
+        - { name: event_time,    type: DATETIME,      desc: 事件时间 }
+        - { name: dt,            type: DATE,          desc: 分区日期 }
+
+    # ---------- DWS 汇总层 ----------
+    - name: dws_trade_store_1d
+      schema: dws
+      description: 门店交易日汇总表。每天每个门店一条汇总记录。
+      columns:
+        - { name: store_id,         type: VARCHAR(32),   desc: 门店ID }
+        - { name: store_name,       type: VARCHAR(128),  desc: 门店名称 }
+        - { name: city,             type: VARCHAR(64),   desc: 城市 }
+        - { name: province,         type: VARCHAR(64),   desc: 省份 }
+        - { name: store_type,       type: VARCHAR(32),   desc: 门店类型 }
+        - { name: order_cnt,        type: BIGINT,        desc: 订单数 }
+        - { name: pay_user_cnt,     type: BIGINT,        desc: 支付用户数 }
+        - { name: total_amount,     type: DECIMAL(18,2), desc: 总金额 }
+        - { name: pay_amount,       type: DECIMAL(18,2), desc: 实付金额 }
+        - { name: refund_cnt,       type: BIGINT,        desc: 退款单数 }
+        - { name: refund_amount,    type: DECIMAL(18,2), desc: 退款金额 }
+        - { name: avg_order_amount, type: DECIMAL(10,2), desc: 客单价 }
+        - { name: dt,               type: DATE,          desc: 统计日期 }
+
+    - name: dws_user_behavior_1d
+      schema: dws
+      description: 用户行为日汇总表。每天每个用户一条汇总记录。
+      columns:
+        - { name: user_id,         type: VARCHAR(32),   desc: 用户ID }
+        - { name: pv,              type: BIGINT,        desc: 浏览量 }
+        - { name: uv_flag,         type: TINYINT,       desc: "是否活跃 (1=是)" }
+        - { name: click_cnt,       type: BIGINT,        desc: 点击次数 }
+        - { name: cart_cnt,        type: BIGINT,        desc: 加购次数 }
+        - { name: order_cnt,       type: BIGINT,        desc: 下单次数 }
+        - { name: pay_cnt,         type: BIGINT,        desc: 支付次数 }
+        - { name: search_cnt,      type: BIGINT,        desc: 搜索次数 }
+        - { name: session_cnt,     type: BIGINT,        desc: 会话数 }
+        - { name: avg_session_dur, type: DECIMAL(10,2), desc: 平均会话时长(秒) }
+        - { name: dt,              type: DATE,          desc: 统计日期 }
+
+    - name: dws_user_value_1d
+      schema: dws
+      description: 用户价值日汇总表。RFM 模型打分 + 用户分层标签。
+      columns:
+        - { name: user_id,          type: VARCHAR(32),   desc: 用户ID }
+        - { name: vip_level,        type: INT,           desc: VIP等级 }
+        - { name: city,             type: VARCHAR(64),   desc: 城市 }
+        - { name: total_orders,     type: BIGINT,        desc: 累计订单数 }
+        - { name: total_amount,     type: DECIMAL(18,2), desc: 累计消费金额 }
+        - { name: avg_order_amount, type: DECIMAL(10,2), desc: 客单价 }
+        - { name: last_order_time,  type: DATETIME,      desc: 最近下单时间 }
+        - { name: recency_days,     type: INT,           desc: 距今天数 }
+        - { name: frequency,        type: INT,           desc: 近30天下单次数 }
+        - { name: monetary,         type: DECIMAL(18,2), desc: 近30天消费金额 }
+        - { name: rfm_score,        type: INT,           desc: RFM总分 }
+        - { name: user_tag,         type: VARCHAR(32),   desc: "用户标签: 高价值/潜力/低活跃/沉默" }
+        - { name: dt,               type: DATE,          desc: 统计日期 }
+
+    # ---------- ADS 报表层 ----------
+    - name: ads_daily_overview
+      schema: ads
+      description: 每日经营概览。一天一条，展示核心经营指标。
+      columns:
+        - { name: dt,                  type: DATE,          desc: 统计日期 }
+        - { name: total_orders,        type: BIGINT,        desc: 订单总数 }
+        - { name: total_gmv,           type: DECIMAL(18,2), desc: "GMV (总交易额)" }
+        - { name: total_pay_amount,    type: DECIMAL(18,2), desc: 实付总额 }
+        - { name: avg_order_amount,    type: DECIMAL(10,2), desc: 客单价 }
+        - { name: pay_user_cnt,        type: BIGINT,        desc: 支付用户数 }
+        - { name: new_user_cnt,        type: BIGINT,        desc: 新注册用户数 }
+        - { name: refund_cnt,          type: BIGINT,        desc: 退款订单数 }
+        - { name: refund_rate,         type: DECIMAL(8,4),  desc: 退款率 }
+        - { name: gmv_vs_yesterday,    type: DECIMAL(8,4),  desc: "GMV 环比 (vs昨天)" }
+        - { name: orders_vs_yesterday, type: DECIMAL(8,4),  desc: 订单数环比 }
+
+    - name: ads_city_rank
+      schema: ads
+      description: 城市维度排行榜。按 GMV/用户数排名。
+      columns:
+        - { name: dt,               type: DATE,          desc: 统计日期 }
+        - { name: city,             type: VARCHAR(64),   desc: 城市 }
+        - { name: province,         type: VARCHAR(64),   desc: 省份 }
+        - { name: order_cnt,        type: BIGINT,        desc: 订单数 }
+        - { name: gmv,              type: DECIMAL(18,2), desc: GMV }
+        - { name: pay_user_cnt,     type: BIGINT,        desc: 支付用户数 }
+        - { name: avg_order_amount, type: DECIMAL(10,2), desc: 客单价 }
+        - { name: rank_by_gmv,     type: INT,           desc: GMV排名 }
+
+    - name: ads_category_funnel
+      schema: ads
+      description: 品类转化漏斗。浏览→点击→加购→下单→支付 各步转化率。
+      columns:
+        - { name: dt,             type: DATE,         desc: 统计日期 }
+        - { name: category,       type: VARCHAR(64),  desc: 品类 }
+        - { name: view_cnt,       type: BIGINT,       desc: 浏览人数 }
+        - { name: click_cnt,      type: BIGINT,       desc: 点击人数 }
+        - { name: cart_cnt,       type: BIGINT,       desc: 加购人数 }
+        - { name: order_cnt,      type: BIGINT,       desc: 下单人数 }
+        - { name: pay_cnt,        type: BIGINT,       desc: 支付人数 }
+        - { name: view_to_click,  type: DECIMAL(8,4), desc: 浏览→点击转化率 }
+        - { name: overall_rate,   type: DECIMAL(8,4), desc: 整体转化率 }
+
+
+# ================================================================
+# 业务指标定义
+# ================================================================
+metrics:
+  - id: dau
+    name: 日活跃用户 (DAU)
+    description: 当天有浏览或交易行为的独立用户数
+    sql_template: >
+      SELECT COUNT(DISTINCT user_id) AS dau
+      FROM dwd.dwd_user_behavior_detail
+      WHERE dt = '{date}'
+
+  - id: gmv
+    name: 日交易额 (GMV)
+    description: 当天所有已支付订单的总金额
+    sql_template: >
+      SELECT SUM(total_amount) AS gmv
+      FROM dwd.dwd_trade_order_detail
+      WHERE dt = '{date}' AND status IN ('paid','shipped','completed')
+
+  - id: order_count
+    name: 日订单量
+    description: 当天新创建的订单总数（去重 order_id）
+    sql_template: >
+      SELECT COUNT(DISTINCT order_id) AS order_count
+      FROM dwd.dwd_trade_order_detail
+      WHERE dt = '{date}'
+
+  - id: avg_order_amount
+    name: 客单价
+    description: 日均每笔订单金额 = GMV / 订单数
+    sql_template: >
+      SELECT ROUND(SUM(total_amount) / COUNT(DISTINCT order_id), 2) AS avg_order_amount
+      FROM dwd.dwd_trade_order_detail
+      WHERE dt = '{date}' AND status IN ('paid','shipped','completed')
+
+  - id: refund_rate
+    name: 退款率
+    description: 当天退款订单占总订单的比例
+    sql_template: >
+      SELECT ROUND(
+        SUM(CASE WHEN status = 'refunded' THEN 1 ELSE 0 END) * 1.0
+        / COUNT(DISTINCT order_id), 4
+      ) AS refund_rate
+      FROM dwd.dwd_trade_order_detail
+      WHERE dt = '{date}'
+
+  - id: pay_user_cnt
+    name: 日支付用户数
+    description: 当天有支付行为的独立用户数
+    sql_template: >
+      SELECT COUNT(DISTINCT user_id) AS pay_user_cnt
+      FROM dwd.dwd_trade_order_detail
+      WHERE dt = '{date}' AND status IN ('paid','shipped','completed')
+
+  - id: conversion_funnel
+    name: 转化漏斗
+    description: 浏览→加购→下单→支付 各步转化率
+    sql_template: >
+      SELECT
+        action,
+        COUNT(DISTINCT user_id) AS users
+      FROM dwd.dwd_user_behavior_detail
+      WHERE dt = '{date}'
+      GROUP BY action
+
+  - id: city_gmv_rank
+    name: 城市 GMV 排行
+    description: 各城市交易额排名
+    sql_template: >
+      SELECT city,
+             SUM(total_amount) AS gmv,
+             COUNT(DISTINCT order_id) AS orders,
+             COUNT(DISTINCT user_id) AS users
+      FROM dwd.dwd_trade_order_detail
+      WHERE dt = '{date}' AND status IN ('paid','shipped','completed')
+      GROUP BY city
+      ORDER BY gmv DESC
+
+  - id: category_sales
+    name: 品类销售分布
+    description: 各品类的订单数和 GMV
+    sql_template: >
+      SELECT category,
+             COUNT(DISTINCT order_id) AS orders,
+             SUM(total_amount) AS gmv
+      FROM dwd.dwd_trade_order_detail
+      WHERE dt = '{date}' AND status IN ('paid','shipped','completed')
+      GROUP BY category
+      ORDER BY gmv DESC
+
+
+# ================================================================
+# 术语映射: 自然语言 → 指标 ID
+# ================================================================
+term_mappings:
+  日活: dau
+  DAU: dau
+  活跃用户: dau
+  GMV: gmv
+  交易额: gmv
+  销售额: gmv
+  营收: gmv
+  营业额: gmv
+  订单量: order_count
+  订单数: order_count
+  客单价: avg_order_amount
+  退款率: refund_rate
+  新客占比: pay_user_cnt
+  支付用户: pay_user_cnt
+  转化率: conversion_funnel
+  漏斗: conversion_funnel
+  城市排名: city_gmv_rank
+  城市排行: city_gmv_rank
+  品类: category_sales
+  品类销售: category_sales

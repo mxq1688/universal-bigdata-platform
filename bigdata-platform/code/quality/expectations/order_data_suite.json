@@ -1,0 +1,62 @@
+{
+  "expectation_suite_name": "order_data_suite",
+  "expectations": [
+    {
+      "expectation_type": "expect_column_values_to_not_be_null",
+      "kwargs": {"column": "order_id"},
+      "meta": {"notes": "订单 ID 不能为空"}
+    },
+    {
+      "expectation_type": "expect_column_values_to_be_unique",
+      "kwargs": {"column": "order_id"},
+      "meta": {"notes": "订单 ID 必须唯一"}
+    },
+    {
+      "expectation_type": "expect_column_values_to_not_be_null",
+      "kwargs": {"column": "user_id"},
+      "meta": {"notes": "用户 ID 不能为空"}
+    },
+    {
+      "expectation_type": "expect_column_values_to_not_be_null",
+      "kwargs": {"column": "total_amount"},
+      "meta": {"notes": "订单金额不能为空"}
+    },
+    {
+      "expectation_type": "expect_column_values_to_be_between",
+      "kwargs": {"column": "total_amount", "min_value": 0, "strict_min": false},
+      "meta": {"notes": "订单金额必须 >= 0"}
+    },
+    {
+      "expectation_type": "expect_column_values_to_not_be_null",
+      "kwargs": {"column": "status"},
+      "meta": {"notes": "订单状态不能为空"}
+    },
+    {
+      "expectation_type": "expect_column_values_to_be_in_set",
+      "kwargs": {
+        "column": "status",
+        "value_set": ["created", "paid", "shipped", "completed", "refunded"]
+      },
+      "meta": {"notes": "订单状态必须在允许的枚举值内"}
+    },
+    {
+      "expectation_type": "expect_column_values_to_match_regex",
+      "kwargs": {"column": "order_id", "regex": "^ord_\\d+"},
+      "meta": {"notes": "订单 ID 格式: ord_ + 数字"}
+    },
+    {
+      "expectation_type": "expect_column_values_to_match_regex",
+      "kwargs": {"column": "user_id", "regex": "^user_\\d+"},
+      "meta": {"notes": "用户 ID 格式: user_ + 数字"}
+    },
+    {
+      "expectation_type": "expect_table_row_count_to_be_between",
+      "kwargs": {"min_value": 1},
+      "meta": {"notes": "表数据量至少 1 行"}
+    }
+  ],
+  "meta": {
+    "great_expectations_version": "0.18.0",
+    "description": "订单表数据质量规则集"
+  }
+}

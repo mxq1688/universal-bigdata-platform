@@ -1,0 +1,145 @@
+---
+- name: "基础环境准备"
+  hosts: all
+  become: yes
+  tags: [base]
+  tasks:
+    - name: 安装基础工具
+      apt:
+        name: [wget, curl, vim, htop, net-tools, unzip, tar, ntp, python3-pip]
+        state: present
+        update_cache: yes
+      when: ansible_os_family == "Debian"
+
+    - name: 安装 Java
+      apt:
+        name: "openjdk-{{ java_version }}-jdk"
+        state: present
+      when: ansible_os_family == "Debian"
+
+    - name: 创建目录
+      file:
+        path: "{{ item }}"
+        state: directory
+      loop: ["{{ bigdata_base_dir }}", "{{ data_dir }}"]
+
+    - name: 系统优化
+      sysctl:
+        name: "{{ item.key }}"
+        value: "{{ item.value }}"
+        state: present
+      loop:
+        - { key: "vm.max_map_count", value: "262144" }
+        - { key: "vm.swappiness", value: "1" }
+
+- name: "部署 Kafka"
+  hosts: kafka
+  become: yes
+  tags: [kafka]
+  vars:
+    kafka_version: "3.7.0"
+    kafka_home: "{{ bigdata_base_dir }}/kafka"
+  tasks:
+    - name: 下载 Kafka
+      get_url:
+        url: "https://downloads.apache.org/kafka/{{ kafka_version }}/kafka_2.13-{{ kafka_version }}.tgz"
+        dest: "/tmp/kafka.tgz"
+        timeout: 300
+
+    - name: 解压 Kafka
+      unarchive:
+        src: "/tmp/kafka.tgz"
+        dest: "{{ bigdata_base_dir }}"
+        remote_src: yes
+
+    - name: 配置 systemd 服务
+      copy:
+        content: |
+          [Unit]
+          Description=Apache Kafka
+          After=network.target
+          [Service]
+          Type=simple
+          Environment="KAFKA_HEAP_OPTS=-Xmx2g -Xms2g"
+          ExecStart={{ kafka_home }}/bin/kafka-server-start.sh {{ kafka_home }}/config/kraft/server.properties
+          ExecStop={{ kafka_home }}/bin/kafka-server-stop.sh
+          Restart=on-failure
+          [Install]
+          WantedBy=multi-user.target
+        dest: /etc/systemd/system/kafka.service
+
+    - name: 启动 Kafka
+      systemd:
+        name: kafka
+        state: started
+        enabled: yes
+        daemon_reload: yes
+
+- name: "部署 Flink"
+  hosts: flink_jobmanager:flink_taskmanager
+  become: yes
+  tags: [flink]
+  vars:
+    flink_version: "1.19.0"
+    flink_home: "{{ bigdata_base_dir }}/flink"
+  tasks:
+    - name: 下载 Flink
+      get_url:
+        url: "https://downloads.apache.org/flink/flink-{{ flink_version }}/flink-{{ flink_version }}-bin-scala_2.12.tgz"
+        dest: "/tmp/flink.tgz"
+        timeout: 300
+
+    - name: 解压 Flink
+      unarchive:
+        src: "/tmp/flink.tgz"
+        dest: "{{ bigdata_base_dir }}"
+        remote_src: yes
+
+    - name: 配置 flink-conf
+      copy:
+        content: |
+          jobmanager.rpc.address: {{ groups['flink_jobmanager'][0] }}
+          jobmanager.memory.process.size: 2048m
+          taskmanager.memory.process.size: 4096m
+          taskmanager.numberOfTaskSlots: 4
+          execution.checkpointing.interval: 60000
+        dest: "{{ flink_home }}/conf/flink-conf.yaml"
+
+- name: "部署监控"
+  hosts: monitoring
+  become: yes
+  tags: [monitoring]
+  tasks:
+    - name: 安装 Docker
+      apt:
+        name: [docker.io, docker-compose-plugin]
+        state: present
+
+    - name: 启动 Prometheus + Grafana
+      shell: |
+        mkdir -p /opt/bigdata/monitoring
+        cd /opt/bigdata/monitoring
+        cat > docker-compose.yml << 'DCEOF'
+        services:
+          prometheus:
+            image: prom/prometheus:v2.49.1
+            ports: ["9090:9090"]
+            restart: always
+          grafana:
+            image: grafana/grafana:10.3.1
+            ports: ["3000:3000"]
+            environment: [GF_SECURITY_ADMIN_PASSWORD=admin123]
+            restart: always
+        DCEOF
+        docker compose up -d
+
+- name: "部署验证"
+  hosts: all
+  tags: [verify]
+  tasks:
+    - name: 检查 Java
+      command: java -version
+      register: java_ver
+      changed_when: false
+    - debug:
+        msg: "{{ inventory_hostname }} | Java: {{ java_ver.stderr_lines[0] | default('N/A') }}"

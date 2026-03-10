@@ -1,0 +1,438 @@
+# ============================================================================
+#  大数据平台 Docker Compose - 本地开发环境
+# ============================================================================
+
+x-common-env: &common-env
+  TZ: Asia/Shanghai
+
+services:
+  # ---- PostgreSQL ----
+  postgres:
+    image: postgres:${POSTGRES_VERSION:-16}
+    container_name: bigdata-postgres
+    environment:
+      <<: *common-env
+      POSTGRES_USER: ${POSTGRES_USER:-bigdata}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-bigdata123}
+      POSTGRES_DB: ${POSTGRES_DB:-bigdata_meta}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-postgres.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-bigdata}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - bigdata-net
+
+  # ---- Redis ----
+  redis:
+    image: redis:${REDIS_VERSION:-7.2}-alpine
+    container_name: bigdata-redis
+    command: redis-server --requirepass ${REDIS_PASSWORD:-bigdata123} --maxmemory 512mb
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-bigdata123}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - bigdata-net
+
+  # ---- Kafka (KRaft) ----
+  kafka:
+    image: bitnami/kafka:${KAFKA_VERSION:-3.7}
+    container_name: bigdata-kafka
+    environment:
+      <<: *common-env
+      KAFKA_CFG_NODE_ID: 1
+      KAFKA_CFG_PROCESS_ROLES: broker,controller
+      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_CFG_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:9094
+      KAFKA_CFG_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,EXTERNAL://localhost:9094
+      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_CFG_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CFG_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_CFG_NUM_PARTITIONS: 3
+      KAFKA_CFG_DEFAULT_REPLICATION_FACTOR: 1
+      KAFKA_HEAP_OPTS: -Xmx1g -Xms512m
+    ports:
+      - "9092:9092"
+      - "9094:9094"
+    volumes:
+      - kafka_data:/bitnami/kafka
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-broker-api-versions.sh --bootstrap-server localhost:9092"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - bigdata-net
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: bigdata-kafka-ui
+    environment:
+      KAFKA_CLUSTERS_0_NAME: bigdata-local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+    ports:
+      - "8090:8080"
+    depends_on:
+      kafka:
+        condition: service_healthy
+    networks:
+      - bigdata-net
+
+  # ---- HDFS ----
+  hdfs-namenode:
+    image: bde2020/hadoop-namenode:2.0.0-hadoop3.2.1-java8
+    container_name: bigdata-hdfs-namenode
+    environment:
+      <<: *common-env
+      CLUSTER_NAME: bigdata
+      CORE_CONF_fs_defaultFS: hdfs://hdfs-namenode:9000
+      HDFS_CONF_dfs_replication: 1
+      HDFS_CONF_dfs_permissions_enabled: "false"
+    ports:
+      - "9870:9870"
+      - "9000:9000"
+    volumes:
+      - hdfs_namenode_data:/hadoop/dfs/name
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9870/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - bigdata-net
+
+  hdfs-datanode:
+    image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
+    container_name: bigdata-hdfs-datanode
+    environment:
+      <<: *common-env
+      CORE_CONF_fs_defaultFS: hdfs://hdfs-namenode:9000
+      HDFS_CONF_dfs_replication: 1
+      HDFS_CONF_dfs_permissions_enabled: "false"
+    ports:
+      - "9864:9864"
+    volumes:
+      - hdfs_datanode_data:/hadoop/dfs/data
+    depends_on:
+      hdfs-namenode:
+        condition: service_healthy
+    networks:
+      - bigdata-net
+
+  # ---- Elasticsearch ----
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:${ES_VERSION:-8.12.0}
+    container_name: bigdata-elasticsearch
+    environment:
+      <<: *common-env
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: ${ES_JAVA_OPTS:--Xms512m -Xmx512m}
+    ports:
+      - "9200:9200"
+    volumes:
+      - es_data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - bigdata-net
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:${ES_VERSION:-8.12.0}
+    container_name: bigdata-kibana
+    environment:
+      ELASTICSEARCH_HOSTS: http://elasticsearch:9200
+    ports:
+      - "5601:5601"
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    networks:
+      - bigdata-net
+
+  # ---- Apache Doris ----
+  doris-fe:
+    image: apache/doris:${DORIS_VERSION:-2.1}-fe
+    container_name: bigdata-doris-fe
+    environment:
+      <<: *common-env
+      FE_SERVERS: "fe1:doris-fe:9010"
+      FE_ID: 1
+    ports:
+      - "8030:8030"
+      - "9030:9030"
+    volumes:
+      - doris_fe_data:/opt/apache-doris/fe/doris-meta
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8030/api/bootstrap || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    networks:
+      - bigdata-net
+
+  doris-be:
+    image: apache/doris:${DORIS_VERSION:-2.1}-be
+    container_name: bigdata-doris-be
+    environment:
+      <<: *common-env
+      FE_SERVERS: "fe1:doris-fe:9010"
+      BE_ADDR: "doris-be:9050"
+    ports:
+      - "8040:8040"
+    volumes:
+      - doris_be_data:/opt/apache-doris/be/storage
+    depends_on:
+      doris-fe:
+        condition: service_healthy
+    networks:
+      - bigdata-net
+
+  # ---- Flink ----
+  flink-jobmanager:
+    image: flink:${FLINK_VERSION:-1.19}-java11
+    container_name: bigdata-flink-jobmanager
+    command: jobmanager
+    environment:
+      <<: *common-env
+      FLINK_PROPERTIES: |
+        jobmanager.rpc.address: flink-jobmanager
+        jobmanager.memory.process.size: 1024m
+        rest.flamegraph.enabled: true
+        execution.checkpointing.interval: 60000
+    ports:
+      - "8081:8081"
+    volumes:
+      - flink_data:/opt/flink/data
+      - ./sample-jobs:/opt/flink/usrlib
+    depends_on:
+      kafka:
+        condition: service_healthy
+    networks:
+      - bigdata-net
+
+  flink-taskmanager:
+    image: flink:${FLINK_VERSION:-1.19}-java11
+    container_name: bigdata-flink-taskmanager
+    command: taskmanager
+    environment:
+      <<: *common-env
+      FLINK_PROPERTIES: |
+        jobmanager.rpc.address: flink-jobmanager
+        taskmanager.memory.process.size: 2048m
+        taskmanager.numberOfTaskSlots: 2
+    volumes:
+      - ./sample-jobs:/opt/flink/usrlib
+    depends_on:
+      - flink-jobmanager
+    networks:
+      - bigdata-net
+
+  # ---- Spark ----
+  spark-master:
+    image: bitnami/spark:${SPARK_VERSION:-3.5}
+    container_name: bigdata-spark-master
+    environment:
+      <<: *common-env
+      SPARK_MODE: master
+      SPARK_MASTER_HOST: spark-master
+    ports:
+      - "8080:8080"
+      - "7077:7077"
+    volumes:
+      - ./sample-jobs:/opt/bitnami/spark/jobs
+    networks:
+      - bigdata-net
+
+  spark-worker:
+    image: bitnami/spark:${SPARK_VERSION:-3.5}
+    container_name: bigdata-spark-worker
+    environment:
+      <<: *common-env
+      SPARK_MODE: worker
+      SPARK_MASTER_URL: spark://spark-master:7077
+      SPARK_WORKER_MEMORY: 2g
+      SPARK_WORKER_CORES: 2
+    depends_on:
+      - spark-master
+    volumes:
+      - ./sample-jobs:/opt/bitnami/spark/jobs
+    networks:
+      - bigdata-net
+
+  # ---- Trino ----
+  trino:
+    image: trinodb/trino:${TRINO_VERSION:-440}
+    container_name: bigdata-trino
+    ports:
+      - "8082:8080"
+    volumes:
+      - ./config/trino/catalog:/etc/trino/catalog
+      - ./config/trino/config.properties:/etc/trino/config.properties
+      - ./config/trino/jvm.config:/etc/trino/jvm.config
+    networks:
+      - bigdata-net
+
+  # ---- Airflow ----
+  airflow-init:
+    image: apache/airflow:${AIRFLOW_VERSION:-2.8.1}-python3.11
+    container_name: bigdata-airflow-init
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        airflow db init
+        airflow users create --username $${AIRFLOW_ADMIN_USER} --password $${AIRFLOW_ADMIN_PASSWORD} --firstname Admin --lastname User --role Admin --email admin@bigdata.local
+    environment:
+      <<: *common-env
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER:-bigdata}:${POSTGRES_PASSWORD:-bigdata123}@postgres:5432/airflow
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW_ADMIN_USER: ${AIRFLOW_ADMIN_USER:-admin}
+      AIRFLOW_ADMIN_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD:-admin123}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - bigdata-net
+
+  airflow-webserver:
+    image: apache/airflow:${AIRFLOW_VERSION:-2.8.1}-python3.11
+    container_name: bigdata-airflow-webserver
+    command: webserver
+    environment:
+      <<: *common-env
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER:-bigdata}:${POSTGRES_PASSWORD:-bigdata123}@postgres:5432/airflow
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    ports:
+      - "8180:8080"
+    volumes:
+      - ./config/airflow/dags:/opt/airflow/dags
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+    networks:
+      - bigdata-net
+
+  airflow-scheduler:
+    image: apache/airflow:${AIRFLOW_VERSION:-2.8.1}-python3.11
+    container_name: bigdata-airflow-scheduler
+    command: scheduler
+    environment:
+      <<: *common-env
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER:-bigdata}:${POSTGRES_PASSWORD:-bigdata123}@postgres:5432/airflow
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    volumes:
+      - ./config/airflow/dags:/opt/airflow/dags
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+    networks:
+      - bigdata-net
+
+  # ---- Superset ----
+  superset:
+    image: apache/superset:${SUPERSET_VERSION:-3.1.0}
+    container_name: bigdata-superset
+    environment:
+      <<: *common-env
+      SUPERSET_SECRET_KEY: ${SUPERSET_SECRET_KEY:-bigdata_superset_secret_key_2026}
+      ADMIN_USERNAME: ${SUPERSET_ADMIN_USER:-admin}
+      ADMIN_PASSWORD: ${SUPERSET_ADMIN_PASSWORD:-admin123}
+      ADMIN_EMAIL: admin@bigdata.local
+    ports:
+      - "8088:8088"
+    command: >
+      bash -c "superset db upgrade && superset fab create-admin --username admin --firstname Admin --lastname User --email admin@bigdata.local --password admin123 || true && superset init && superset run -h 0.0.0.0 -p 8088"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - bigdata-net
+
+  # ---- Prometheus ----
+  prometheus:
+    image: prom/prometheus:${PROMETHEUS_VERSION:-v2.49.1}
+    container_name: bigdata-prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=${PROMETHEUS_RETENTION:-15d}'
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./config/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    networks:
+      - bigdata-net
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: bigdata-alertmanager
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./config/prometheus/alertmanager.yml:/etc/alertmanager/alertmanager.yml
+    networks:
+      - bigdata-net
+
+  node-exporter:
+    image: prom/node-exporter:v1.7.0
+    container_name: bigdata-node-exporter
+    ports:
+      - "9100:9100"
+    networks:
+      - bigdata-net
+
+  # ---- Grafana ----
+  grafana:
+    image: grafana/grafana:${GRAFANA_VERSION:-10.3.1}
+    container_name: bigdata-grafana
+    environment:
+      <<: *common-env
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin123}
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./config/grafana/provisioning:/etc/grafana/provisioning
+    depends_on:
+      - prometheus
+    networks:
+      - bigdata-net
+
+networks:
+  bigdata-net:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
+  kafka_data:
+  hdfs_namenode_data:
+  hdfs_datanode_data:
+  es_data:
+  doris_fe_data:
+  doris_be_data:
+  flink_data:
+  prometheus_data:
+  grafana_data:

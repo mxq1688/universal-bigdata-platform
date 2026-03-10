@@ -1,0 +1,73 @@
+{
+  "job": {
+    "setting": {
+      "speed": {
+        "channel": 5,
+        "byte": 104857600
+      },
+      "errorLimit": {
+        "record": 0,
+        "percentage": 0.02
+      }
+    },
+    "content": [
+      {
+        "reader": {
+          "name": "hdfsreader",
+          "parameter": {
+            "defaultFS": "${HDFS_URL}",
+            "path": "/user/hive/warehouse/dwd.db/dwd_trade_order_detail/dt=${RUN_DATE}",
+            "column": [
+              {"index": 0, "type": "string"},
+              {"index": 1, "type": "string"},
+              {"index": 2, "type": "string"},
+              {"index": 3, "type": "double"},
+              {"index": 4, "type": "string"},
+              {"index": 5, "type": "string"},
+              {"index": 6, "type": "string"},
+              {"index": 7, "type": "string"},
+              {"index": 8, "type": "string"},
+              {"index": 9, "type": "string"}
+            ],
+            "fieldDelimiter": "\t",
+            "encoding": "UTF-8",
+            "fileType": "text",
+            "compress": "gzip"
+          }
+        },
+        "writer": {
+          "name": "doriswriter",
+          "parameter": {
+            "feLoadUrl": ["${DORIS_FE_HOST}:${DORIS_HTTP_PORT}"],
+            "jdbcUrl": "jdbc:mysql://${DORIS_FE_HOST}:${DORIS_QUERY_PORT}",
+            "database": "${DORIS_DB}",
+            "table": "dwd_trade_order_detail",
+            "username": "${DORIS_USER}",
+            "password": "${DORIS_PASSWORD}",
+            "column": [
+              "order_id",
+              "user_id",
+              "store_id",
+              "total_amount",
+              "order_status",
+              "payment_method",
+              "city",
+              "device",
+              "create_time",
+              "update_time"
+            ],
+            "loadProps": {
+              "format": "csv",
+              "column_separator": "\t",
+              "strip_outer_array": false
+            },
+            "maxBatchRows": 500000,
+            "maxBatchByteSize": 104857600,
+            "labelPrefix": "datax_hdfs2doris",
+            "flushInterval": 30000
+          }
+        }
+      }
+    ]
+  }
+}

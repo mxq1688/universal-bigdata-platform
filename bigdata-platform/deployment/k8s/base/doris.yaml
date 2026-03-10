@@ -1,0 +1,95 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: doris-fe
+  namespace: bigdata
+spec:
+  serviceName: doris-fe-headless
+  replicas: 3
+  selector:
+    matchLabels:
+      app: doris
+      component: fe
+  template:
+    metadata:
+      labels:
+        app: doris
+        component: fe
+    spec:
+      containers:
+        - name: doris-fe
+          image: apache/doris:2.1-fe
+          ports:
+            - containerPort: 8030
+            - containerPort: 9030
+            - containerPort: 9010
+          resources:
+            requests: { cpu: "1", memory: "4Gi" }
+            limits: { cpu: "4", memory: "8Gi" }
+          volumeMounts:
+            - name: doris-fe-data
+              mountPath: /opt/apache-doris/fe/doris-meta
+  volumeClaimTemplates:
+    - metadata:
+        name: doris-fe-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: standard
+        resources:
+          requests:
+            storage: 50Gi
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: doris-be
+  namespace: bigdata
+spec:
+  serviceName: doris-be-headless
+  replicas: 3
+  selector:
+    matchLabels:
+      app: doris
+      component: be
+  template:
+    metadata:
+      labels:
+        app: doris
+        component: be
+    spec:
+      containers:
+        - name: doris-be
+          image: apache/doris:2.1-be
+          ports:
+            - containerPort: 8040
+            - containerPort: 9050
+          resources:
+            requests: { cpu: "2", memory: "8Gi" }
+            limits: { cpu: "8", memory: "16Gi" }
+          volumeMounts:
+            - name: doris-be-data
+              mountPath: /opt/apache-doris/be/storage
+  volumeClaimTemplates:
+    - metadata:
+        name: doris-be-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: standard
+        resources:
+          requests:
+            storage: 200Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: doris-fe
+  namespace: bigdata
+spec:
+  selector:
+    app: doris
+    component: fe
+  ports:
+    - name: http
+      port: 8030
+    - name: mysql
+      port: 9030

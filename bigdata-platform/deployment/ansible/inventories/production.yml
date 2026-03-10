@@ -1,0 +1,34 @@
+all:
+  vars:
+    ansible_user: root
+    ansible_python_interpreter: /usr/bin/python3
+    bigdata_base_dir: /opt/bigdata
+    java_version: "11"
+    data_dir: /data/bigdata
+  children:
+    kafka:
+      hosts:
+        kafka-1: { ansible_host: 10.0.1.11, kafka_broker_id: 1 }
+        kafka-2: { ansible_host: 10.0.1.12, kafka_broker_id: 2 }
+        kafka-3: { ansible_host: 10.0.1.13, kafka_broker_id: 3 }
+    flink_jobmanager:
+      hosts:
+        flink-jm-1: { ansible_host: 10.0.1.21 }
+    flink_taskmanager:
+      hosts:
+        flink-tm-1: { ansible_host: 10.0.1.22 }
+        flink-tm-2: { ansible_host: 10.0.1.23 }
+        flink-tm-3: { ansible_host: 10.0.1.24 }
+    doris_fe:
+      hosts:
+        doris-fe-1: { ansible_host: 10.0.1.51 }
+        doris-fe-2: { ansible_host: 10.0.1.52 }
+        doris-fe-3: { ansible_host: 10.0.1.53 }
+    doris_be:
+      hosts:
+        doris-be-1: { ansible_host: 10.0.1.54 }
+        doris-be-2: { ansible_host: 10.0.1.55 }
+        doris-be-3: { ansible_host: 10.0.1.56 }
+    monitoring:
+      hosts:
+        monitor-1: { ansible_host: 10.0.1.61 }

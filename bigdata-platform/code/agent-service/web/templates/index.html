@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🤖 Data Analysis Agent</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <!-- Markdown 渲染 -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+</head>
+<body>
+
+<div class="app">
+    <!-- 侧边栏 -->
+    <aside class="sidebar">
+        <div class="logo">🤖 Data Agent</div>
+        <div class="examples">
+            <div class="section-title">💡 示例问题</div>
+            <div class="example-item" onclick="askQuestion(this.textContent)">昨天的 GMV 和订单量是多少？</div>
+            <div class="example-item" onclick="askQuestion(this.textContent)">最近 7 天日活趋势</div>
+            <div class="example-item" onclick="askQuestion(this.textContent)">各城市交易额 TOP 10</div>
+            <div class="example-item" onclick="askQuestion(this.textContent)">用户转化漏斗分析</div>
+            <div class="example-item" onclick="askQuestion(this.textContent)">退款率最高的分类是什么？</div>
+            <div class="example-item" onclick="askQuestion(this.textContent)">新老用户消费对比</div>
+            <div class="example-item" onclick="askQuestion(this.textContent)">本周 vs 上周销售额变化</div>
+        </div>
+    </aside>
+
+    <!-- 主内容 -->
+    <main class="main">
+        <!-- 对话历史 -->
+        <div class="chat-area" id="chatArea">
+            <div class="welcome">
+                <h1>🤖 数据分析 Agent</h1>
+                <p>用自然语言提问，我帮你查数据、做分析、画图表</p>
+            </div>
+        </div>
+
+        <!-- 输入区 -->
+        <div class="input-area">
+            <div class="input-wrapper">
+                <textarea id="queryInput" placeholder="输入你的分析问题，如：昨天各城市的 GMV 排名..." rows="1"
+                    onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();submitQuery()}"></textarea>
+                <button id="submitBtn" onclick="submitQuery()">
+                    <span class="btn-text">发送</span>
+                    <span class="btn-loading" style="display:none">⏳</span>
+                </button>
+            </div>
+        </div>
+    </main>
+</div>
+
+<script>
+const chatArea = document.getElementById('chatArea');
+const queryInput = document.getElementById('queryInput');
+const submitBtn = document.getElementById('submitBtn');
+
+function askQuestion(text) {
+    queryInput.value = text;
+    submitQuery();
+}
+
+async function submitQuery() {
+    const query = queryInput.value.trim();
+    if (!query) return;
+
+    // 禁用输入
+    queryInput.disabled = true;
+    submitBtn.disabled = true;
+    submitBtn.querySelector('.btn-text').style.display = 'none';
+    submitBtn.querySelector('.btn-loading').style.display = 'inline';
+
+    // 清除欢迎信息
+    const welcome = chatArea.querySelector('.welcome');
+    if (welcome) welcome.remove();
+
+    // 用户消息
+    appendMessage('user', query);
+    queryInput.value = '';
+
+    // 加载状态
+    const loadingId = appendMessage('agent-loading', '🔄 正在分析，请稍候...');
+
+    try {
+        const resp = await fetch('/api/analyze', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ query }),
+        });
+        const data = await resp.json();
+
+        // 移除 loading
+        document.getElementById(loadingId)?.remove();
+
+        if (data.success) {
+            // 分析结果
+            let html = marked.parse(data.summary || '(无结论)');
+
+            // 图表
+            if (data.charts && data.charts.length > 0) {
+                html += '<div class="charts">';
+                for (const chartPath of data.charts) {
+                    const filename = chartPath.split('/').pop();
+                    html += `<img src="/api/charts/${filename}" alt="chart" class="chart-img" />`;
+                }
+                html += '</div>';
+            }
+
+            // 统计
+            html += `<div class="stats">SQL: ${data.sql_count} 次 | 图表: ${data.charts?.length || 0} 张 | 步骤: ${data.step_count} 步 | 耗时: ${(data.elapsed_ms/1000).toFixed(1)}s</div>`;
+
+            appendMessage('agent', html, true);
+
+        } else {
+            appendMessage('agent', `❌ 分析失败: ${data.error || '未知错误'}`, true);
+        }
+
+    } catch (e) {
+        document.getElementById(loadingId)?.remove();
+        appendMessage('agent', `❌ 请求失败: ${e.message}`, true);
+    }
+
+    // 恢复输入
+    queryInput.disabled = false;
+    submitBtn.disabled = false;
+    submitBtn.querySelector('.btn-text').style.display = 'inline';
+    submitBtn.querySelector('.btn-loading').style.display = 'none';
+    queryInput.focus();
+}
+
+let msgCounter = 0;
+function appendMessage(type, content, isHtml = false) {
+    const id = `msg-${++msgCounter}`;
+    const div = document.createElement('div');
+    div.id = id;
+    div.className = `message ${type}`;
+
+    const avatar = type === 'user' ? '👤' : '🤖';
+    const label = type === 'user' ? '你' : 'Agent';
+
+    div.innerHTML = `
+        <div class="msg-header">
+            <span class="avatar">${avatar}</span>
+            <span class="label">${label}</span>
+        </div>
+        <div class="msg-body">${isHtml ? content : escapeHtml(content)}</div>
+    `;
+    chatArea.appendChild(div);
+    chatArea.scrollTop = chatArea.scrollHeight;
+    return id;
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+// 自动调整输入框高度
+queryInput.addEventListener('input', function() {
+    this.style.height = 'auto';
+    this.style.height = Math.min(this.scrollHeight, 120) + 'px';
+});
+</script>
+
+</body>
+</html>

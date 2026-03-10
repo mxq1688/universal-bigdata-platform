@@ -1,0 +1,201 @@
+# =================================================================
+# 大数据平台 — 基础设施告警规则
+# 覆盖: 主机 / MySQL / Redis / Elasticsearch / 磁盘
+# =================================================================
+
+groups:
+
+  # ====================== 主机资源 ======================
+  - name: node_alerts
+    rules:
+
+      - alert: HighCPUUsage
+        expr: 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 85
+        for: 5m
+        labels:
+          severity: warning
+          team: infra
+        annotations:
+          summary: "CPU 使用率过高: {{ $labels.instance }}"
+          description: "CPU 使用率 {{ $value | printf \"%.1f\" }}%，持续 5 分钟超过 85%"
+
+      - alert: CriticalCPUUsage
+        expr: 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 95
+        for: 3m
+        labels:
+          severity: critical
+          team: infra
+        annotations:
+          summary: "🔴 CPU 严重过载: {{ $labels.instance }}"
+          description: "CPU 使用率 {{ $value | printf \"%.1f\" }}%，持续 3 分钟超过 95%"
+
+      - alert: HighMemoryUsage
+        expr: (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+          team: infra
+        annotations:
+          summary: "内存使用率过高: {{ $labels.instance }}"
+          description: "内存使用率 {{ $value | printf \"%.1f\" }}%，超过 85%"
+
+      - alert: CriticalMemoryUsage
+        expr: (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100 > 95
+        for: 2m
+        labels:
+          severity: critical
+          team: infra
+        annotations:
+          summary: "🔴 内存即将耗尽: {{ $labels.instance }}"
+          description: "内存使用率 {{ $value | printf \"%.1f\" }}%，超过 95%"
+
+      - alert: DiskSpaceWarning
+        expr: (1 - node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes) * 100 > 80
+        for: 10m
+        labels:
+          severity: warning
+          team: infra
+        annotations:
+          summary: "磁盘空间不足: {{ $labels.instance }} {{ $labels.mountpoint }}"
+          description: "磁盘 {{ $labels.mountpoint }} 使用率 {{ $value | printf \"%.1f\" }}%"
+
+      - alert: DiskSpaceCritical
+        expr: (1 - node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes) * 100 > 90
+        for: 5m
+        labels:
+          severity: critical
+          team: infra
+        annotations:
+          summary: "🔴 磁盘空间严重不足: {{ $labels.instance }} {{ $labels.mountpoint }}"
+          description: "磁盘 {{ $labels.mountpoint }} 使用率 {{ $value | printf \"%.1f\" }}%，请立即清理"
+
+      - alert: HighNetworkIO
+        expr: rate(node_network_receive_bytes_total{device!~"lo|veth.*"}[5m]) > 100 * 1024 * 1024
+        for: 10m
+        labels:
+          severity: warning
+          team: infra
+        annotations:
+          summary: "网络入流量过高: {{ $labels.instance }}"
+          description: "网卡 {{ $labels.device }} 入流量 {{ $value | humanize }}B/s"
+
+      - alert: NodeDown
+        expr: up{job="node"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: infra
+        annotations:
+          summary: "🔴 节点宕机: {{ $labels.instance }}"
+          description: "Node Exporter 无法采集指标，节点可能已宕机"
+
+  # ====================== MySQL ======================
+  - name: mysql_alerts
+    rules:
+
+      - alert: MySQLDown
+        expr: up{job="mysql"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: data
+        annotations:
+          summary: "🔴 MySQL 不可用"
+          description: "MySQL Exporter 无法采集，数据库可能已宕机"
+
+      - alert: MySQLSlowQueries
+        expr: rate(mysql_global_status_slow_queries[5m]) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+          team: data
+        annotations:
+          summary: "MySQL 慢查询增多"
+          description: "慢查询率 {{ $value | printf \"%.2f\" }}/s，请检查慢查询日志"
+
+      - alert: MySQLConnectionsHigh
+        expr: mysql_global_status_threads_connected / mysql_global_variables_max_connections > 0.8
+        for: 5m
+        labels:
+          severity: warning
+          team: data
+        annotations:
+          summary: "MySQL 连接数即将耗尽"
+          description: "当前连接占比 {{ $value | printf \"%.1f\" }}%"
+
+      - alert: MySQLReplicationLag
+        expr: mysql_slave_status_seconds_behind_master > 60
+        for: 5m
+        labels:
+          severity: warning
+          team: data
+        annotations:
+          summary: "MySQL 主从延迟"
+          description: "复制延迟 {{ $value }}s，超过 60s 阈值"
+
+  # ====================== Redis ======================
+  - name: redis_alerts
+    rules:
+
+      - alert: RedisDown
+        expr: up{job="redis"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: infra
+        annotations:
+          summary: "🔴 Redis 不可用"
+          description: "Redis Exporter 无法采集"
+
+      - alert: RedisHighMemory
+        expr: redis_memory_used_bytes / redis_memory_max_bytes > 0.85
+        for: 5m
+        labels:
+          severity: warning
+          team: infra
+        annotations:
+          summary: "Redis 内存使用率过高"
+          description: "内存使用率 {{ $value | printf \"%.1f\" }}%"
+
+      - alert: RedisKeyEviction
+        expr: rate(redis_evicted_keys_total[5m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+          team: infra
+        annotations:
+          summary: "Redis 正在驱逐 Key"
+          description: "驱逐速率 {{ $value | printf \"%.1f\" }}/s，请扩容或清理"
+
+  # ====================== Elasticsearch ======================
+  - name: elasticsearch_alerts
+    rules:
+
+      - alert: ElasticsearchDown
+        expr: up{job="elasticsearch"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: data
+        annotations:
+          summary: "🔴 Elasticsearch 不可用"
+
+      - alert: ElasticsearchClusterRed
+        expr: elasticsearch_cluster_health_status{color="red"} == 1
+        for: 3m
+        labels:
+          severity: critical
+          team: data
+        annotations:
+          summary: "🔴 Elasticsearch 集群 RED"
+          description: "有分片未分配，数据可能丢失"
+
+      - alert: ElasticsearchDiskHigh
+        expr: (1 - elasticsearch_filesystem_data_available_bytes / elasticsearch_filesystem_data_size_bytes) > 0.85
+        for: 10m
+        labels:
+          severity: warning
+          team: data
+        annotations:
+          summary: "Elasticsearch 磁盘使用率过高"
+          description: "磁盘使用率 {{ $value | printf \"%.1f\" }}%"

@@ -1,0 +1,71 @@
+{
+  "job": {
+    "setting": {
+      "speed": {
+        "channel": 3,
+        "byte": 104857600
+      },
+      "errorLimit": {
+        "record": 0,
+        "percentage": 0.02
+      }
+    },
+    "content": [
+      {
+        "reader": {
+          "name": "mysqlreader",
+          "parameter": {
+            "username": "${MYSQL_USER}",
+            "password": "${MYSQL_PASSWORD}",
+            "column": ["*"],
+            "connection": [
+              {
+                "querySql": [
+                  "SELECT order_id, user_id, store_id, total_amount, status, payment_method, city, product_name, category, create_time, update_time FROM orders LEFT JOIN products USING(product_id) WHERE DATE(orders.update_time) = '${RUN_DATE}'"
+                ],
+                "jdbcUrl": [
+                  "jdbc:mysql://${MYSQL_HOST}:${MYSQL_PORT}/${MYSQL_DB}?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai"
+                ]
+              }
+            ],
+            "splitPk": "order_id",
+            "fetchSize": 1024
+          }
+        },
+        "writer": {
+          "name": "elasticsearchwriter",
+          "parameter": {
+            "endpoint": "http://${ES_HOST}:${ES_PORT}",
+            "accessId": "${ES_USER}",
+            "accessKey": "${ES_PASSWORD}",
+            "index": "orders_${RUN_DATE}",
+            "type": "_doc",
+            "cleanup": true,
+            "discovery": false,
+            "batchSize": 1000,
+            "splitter": ",",
+            "column": [
+              {"name": "order_id", "type": "keyword"},
+              {"name": "user_id", "type": "keyword"},
+              {"name": "store_id", "type": "keyword"},
+              {"name": "total_amount", "type": "double"},
+              {"name": "status", "type": "keyword"},
+              {"name": "payment_method", "type": "keyword"},
+              {"name": "city", "type": "keyword"},
+              {"name": "product_name", "type": "text"},
+              {"name": "category", "type": "keyword"},
+              {"name": "create_time", "type": "date"},
+              {"name": "update_time", "type": "date"}
+            ],
+            "settings": {
+              "index": {
+                "number_of_shards": 3,
+                "number_of_replicas": 1
+              }
+            }
+          }
+        }
+      }
+    ]
+  }
+}

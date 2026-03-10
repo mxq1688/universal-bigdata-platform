@@ -1,0 +1,158 @@
+{
+  "description": "Doris 数仓监控: FE/BE 状态 / 查询延迟 / QPS / Compaction / 磁盘 / 内存",
+  "editable": true,
+  "panels": [
+    {
+      "title": "FE 状态",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [{ "options": { "0": { "color": "red", "text": "DOWN" }, "1": { "color": "green", "text": "UP" } }, "type": "value" }],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] },
+          "color": { "mode": "thresholds" }
+        }
+      },
+      "targets": [{ "expr": "up{job=\"doris-fe\"}", "legendFormat": "FE" }]
+    },
+    {
+      "title": "BE 状态",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [{ "options": { "0": { "color": "red", "text": "DOWN" }, "1": { "color": "green", "text": "UP" } }, "type": "value" }],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] },
+          "color": { "mode": "thresholds" }
+        }
+      },
+      "targets": [{ "expr": "up{job=\"doris-be\"}", "legendFormat": "BE" }]
+    },
+    {
+      "title": "查询 QPS",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": { "defaults": { "unit": "ops", "color": { "fixedColor": "blue", "mode": "fixed" } } },
+      "targets": [{ "expr": "rate(doris_fe_query_total[5m])", "legendFormat": "QPS" }]
+    },
+    {
+      "title": "P99 查询延迟",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 1000 }, { "color": "red", "value": 5000 }] },
+          "color": { "mode": "thresholds" }
+        }
+      },
+      "targets": [{ "expr": "doris_fe_query_latency_ms{quantile=\"0.99\"}", "legendFormat": "P99" }]
+    },
+    {
+      "title": "Compaction Score",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 50 }, { "color": "red", "value": 100 }] },
+          "color": { "mode": "thresholds" }
+        }
+      },
+      "targets": [{ "expr": "doris_be_max_compaction_score", "legendFormat": "Score" }]
+    },
+    {
+      "title": "Tablet 数量",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": { "defaults": { "unit": "short", "color": { "fixedColor": "purple", "mode": "fixed" } } },
+      "targets": [{ "expr": "doris_be_tablet_num", "legendFormat": "Tablets" }]
+    },
+    {
+      "title": "📈 查询 QPS 趋势",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": { "defaults": { "unit": "ops", "custom": { "lineWidth": 2, "fillOpacity": 15, "gradientMode": "scheme" } } },
+      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["mean", "max"] } },
+      "targets": [
+        { "expr": "rate(doris_fe_query_total[5m])", "legendFormat": "Total QPS" },
+        { "expr": "rate(doris_fe_query_err_total[5m])", "legendFormat": "Error QPS" }
+      ]
+    },
+    {
+      "title": "📈 查询延迟分位数",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": { "defaults": { "unit": "ms", "custom": { "lineWidth": 2, "fillOpacity": 10 } } },
+      "targets": [
+        { "expr": "doris_fe_query_latency_ms{quantile=\"0.5\"}", "legendFormat": "P50" },
+        { "expr": "doris_fe_query_latency_ms{quantile=\"0.9\"}", "legendFormat": "P90" },
+        { "expr": "doris_fe_query_latency_ms{quantile=\"0.99\"}", "legendFormat": "P99" }
+      ]
+    },
+    {
+      "title": "📊 BE 磁盘使用",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": { "defaults": { "unit": "bytes", "custom": { "lineWidth": 2, "fillOpacity": 15 } } },
+      "targets": [
+        { "expr": "doris_be_disks_total_capacity", "legendFormat": "Total Capacity" },
+        { "expr": "doris_be_disks_total_capacity - doris_be_disks_avail_capacity", "legendFormat": "Used" }
+      ]
+    },
+    {
+      "title": "📊 BE 内存使用",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": { "defaults": { "unit": "bytes", "custom": { "lineWidth": 2, "fillOpacity": 15 } } },
+      "targets": [
+        { "expr": "doris_be_mem_limit", "legendFormat": "Mem Limit" },
+        { "expr": "doris_be_process_mem_bytes", "legendFormat": "Process Mem" },
+        { "expr": "doris_be_jemalloc_active_bytes", "legendFormat": "Jemalloc Active" }
+      ]
+    },
+    {
+      "title": "📊 Compaction 速率",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": { "defaults": { "unit": "Bps", "custom": { "lineWidth": 2, "fillOpacity": 10 } } },
+      "targets": [
+        { "expr": "rate(doris_be_base_compaction_bytes_total[5m])", "legendFormat": "Base Compaction" },
+        { "expr": "rate(doris_be_cumulative_compaction_bytes_total[5m])", "legendFormat": "Cumulative Compaction" }
+      ]
+    },
+    {
+      "title": "📊 数据导入 (Stream Load)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": { "defaults": { "unit": "ops", "custom": { "lineWidth": 2, "fillOpacity": 10 } } },
+      "targets": [
+        { "expr": "rate(doris_be_stream_load_rows_total[5m])", "legendFormat": "Rows/s" },
+        { "expr": "rate(doris_be_stream_load_bytes_total[5m])", "legendFormat": "Bytes/s" }
+      ]
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["bigdata", "doris", "warehouse"],
+  "templating": {
+    "list": [{ "name": "DS_PROMETHEUS", "type": "datasource", "query": "prometheus" }]
+  },
+  "time": { "from": "now-6h", "to": "now" },
+  "timezone": "Asia/Shanghai",
+  "title": "🏛️ Doris 数仓监控",
+  "uid": "bigdata-doris",
+  "version": 1
+}

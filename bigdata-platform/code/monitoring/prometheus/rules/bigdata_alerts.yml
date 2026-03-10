@@ -1,0 +1,245 @@
+# =================================================================
+# 大数据平台 — 业务组件告警规则
+# 覆盖: Kafka / Flink / Airflow / Doris / Agent Service
+# =================================================================
+
+groups:
+
+  # ====================== Kafka ======================
+  - name: kafka_alerts
+    rules:
+
+      - alert: KafkaBrokerDown
+        expr: up{job="kafka"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: data
+        annotations:
+          summary: "🔴 Kafka Broker 不可用"
+          description: "Kafka Exporter 无法采集，Broker 可能已宕机"
+
+      - alert: KafkaConsumerLagHigh
+        expr: kafka_consumergroup_lag_sum > 100000
+        for: 10m
+        labels:
+          severity: warning
+          team: data
+        annotations:
+          summary: "Kafka 消费延迟过高"
+          description: "消费组 {{ $labels.consumergroup }} topic {{ $labels.topic }} 积压 {{ $value }} 条"
+
+      - alert: KafkaConsumerLagCritical
+        expr: kafka_consumergroup_lag_sum > 500000
+        for: 5m
+        labels:
+          severity: critical
+          team: data
+        annotations:
+          summary: "🔴 Kafka 消费严重积压"
+          description: "消费组 {{ $labels.consumergroup }} topic {{ $labels.topic }} 积压 {{ $value }} 条，可能导致数据延迟"
+
+      - alert: KafkaTopicNoMessages
+        expr: rate(kafka_topic_partition_current_offset{topic=~"user_behavior|order_events"}[10m]) == 0
+        for: 15m
+        labels:
+          severity: warning
+          team: data
+        annotations:
+          summary: "Kafka Topic 无新消息"
+          description: "Topic {{ $labels.topic }} 15 分钟内无新消息写入"
+
+      - alert: KafkaUnderReplicatedPartitions
+        expr: kafka_topic_partition_under_replicated_partition > 0
+        for: 5m
+        labels:
+          severity: warning
+          team: data
+        annotations:
+          summary: "Kafka 副本不足"
+          description: "Topic {{ $labels.topic }} partition {{ $labels.partition }} 副本不足"
+
+  # ====================== Flink ======================
+  - name: flink_alerts
+    rules:
+
+      - alert: FlinkJobManagerDown
+        expr: up{job="flink"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: data
+        annotations:
+          summary: "🔴 Flink JobManager 不可用"
+          description: "Flink 实时计算集群不可用，所有实时任务受影响"
+
+      - alert: FlinkJobFailed
+        expr: flink_jobmanager_job_numRestarts > 3
+        for: 5m
+        labels:
+          severity: critical
+          team: data
+        annotations:
+          summary: "🔴 Flink 作业重启频繁"
+          description: "作业重启次数 {{ $value }} > 3，请检查作业日志"
+
+      - alert: FlinkCheckpointFailed
+        expr: increase(flink_jobmanager_job_numberOfFailedCheckpoints[10m]) > 3
+        for: 5m
+        labels:
+          severity: warning
+          team: data
+        annotations:
+          summary: "Flink Checkpoint 连续失败"
+          description: "10 分钟内失败 {{ $value }} 次，数据一致性可能受影响"
+
+      - alert: FlinkCheckpointDurationHigh
+        expr: flink_jobmanager_job_lastCheckpointDuration > 120000
+        for: 5m
+        labels:
+          severity: warning
+          team: data
+        annotations:
+          summary: "Flink Checkpoint 耗时过长"
+          description: "最近 Checkpoint 耗时 {{ $value }}ms，超过 2 分钟"
+
+      - alert: FlinkBackpressureHigh
+        expr: flink_taskmanager_job_task_backPressuredTimeMsPerSecond > 500
+        for: 10m
+        labels:
+          severity: warning
+          team: data
+        annotations:
+          summary: "Flink 算子反压"
+          description: "任务 {{ $labels.task_name }} 反压 {{ $value }}ms/s，数据处理可能延迟"
+
+      - alert: FlinkNoRecordsProcessed
+        expr: rate(flink_taskmanager_job_task_numRecordsIn[5m]) == 0
+        for: 10m
+        labels:
+          severity: warning
+          team: data
+        annotations:
+          summary: "Flink 任务无数据处理"
+          description: "任务 {{ $labels.task_name }} 10 分钟内无新数据消费"
+
+  # ====================== Airflow ======================
+  - name: airflow_alerts
+    rules:
+
+      - alert: AirflowDAGFailure
+        expr: increase(airflow_dagrun_failed_count[1h]) > 0
+        labels:
+          severity: critical
+          team: data
+        annotations:
+          summary: "🔴 Airflow DAG 执行失败"
+          description: "DAG {{ $labels.dag_id }} 在过去 1 小时内失败 {{ $value }} 次"
+
+      - alert: AirflowTaskDurationLong
+        expr: airflow_dag_task_duration > 3600
+        for: 5m
+        labels:
+          severity: warning
+          team: data
+        annotations:
+          summary: "Airflow 任务执行过慢"
+          description: "DAG {{ $labels.dag_id }} 任务 {{ $labels.task_id }} 运行时间 {{ $value | printf \"%.0f\" }}s"
+
+      - alert: AirflowSchedulerHeartbeat
+        expr: time() - airflow_scheduler_heartbeat > 60
+        for: 2m
+        labels:
+          severity: critical
+          team: data
+        annotations:
+          summary: "🔴 Airflow Scheduler 无心跳"
+          description: "Scheduler 超过 60s 无心跳，调度功能可能中断"
+
+      - alert: AirflowQueuedTasksHigh
+        expr: airflow_pool_queued_slots > 50
+        for: 10m
+        labels:
+          severity: warning
+          team: data
+        annotations:
+          summary: "Airflow 任务队列积压"
+          description: "队列中积压 {{ $value }} 个任务"
+
+  # ====================== Doris ======================
+  - name: doris_alerts
+    rules:
+
+      - alert: DorisFEDown
+        expr: up{job="doris-fe"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: data
+        annotations:
+          summary: "🔴 Doris FE 不可用"
+          description: "Doris Frontend 宕机，无法接收查询"
+
+      - alert: DorisBEDown
+        expr: up{job="doris-be"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: data
+        annotations:
+          summary: "🔴 Doris BE 不可用"
+          description: "Doris Backend 宕机，数据无法读写"
+
+      - alert: DorisQueryLatencyHigh
+        expr: doris_fe_query_latency_ms{quantile="0.99"} > 5000
+        for: 10m
+        labels:
+          severity: warning
+          team: data
+        annotations:
+          summary: "Doris 查询延迟过高"
+          description: "P99 查询延迟 {{ $value }}ms > 5s"
+
+      - alert: DorisCompactionScore
+        expr: doris_be_max_compaction_score > 100
+        for: 30m
+        labels:
+          severity: warning
+          team: data
+        annotations:
+          summary: "Doris Compaction 积压"
+          description: "Compaction Score {{ $value }}，数据合并跟不上写入速度"
+
+  # ====================== Agent Service ======================
+  - name: agent_alerts
+    rules:
+
+      - alert: AgentServiceDown
+        expr: up{job="agent-service"} == 0
+        for: 2m
+        labels:
+          severity: warning
+          team: data
+        annotations:
+          summary: "Agent Service 不可用"
+          description: "智能分析服务无法访问"
+
+      - alert: AgentHighErrorRate
+        expr: rate(agent_analysis_errors_total[5m]) / rate(agent_analysis_requests_total[5m]) > 0.3
+        for: 10m
+        labels:
+          severity: warning
+          team: data
+        annotations:
+          summary: "Agent 分析错误率过高"
+          description: "分析错误率 {{ $value | printf \"%.1f\" }}%，超过 30%"
+
+      - alert: AgentSlowAnalysis
+        expr: histogram_quantile(0.95, rate(agent_analysis_duration_seconds_bucket[10m])) > 30
+        for: 10m
+        labels:
+          severity: warning
+          team: data
+        annotations:
+          summary: "Agent 分析耗时过长"
+          description: "P95 分析耗时 {{ $value | printf \"%.1f\" }}s > 30s"
